@@ -1,0 +1,5 @@
+# Solana RPC endpoint (mainnet-beta)
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+
+# Optional – use a private RPC for higher rate limits (e.g. Helius, QuickNode, Alchemy)
+# SOLANA_RPC_URL=https://rpc.helius.xyz/?api-key=YOUR_API_KEY
