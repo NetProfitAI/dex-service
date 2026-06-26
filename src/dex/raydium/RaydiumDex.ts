@@ -1,9 +1,5 @@
 import {
     Raydium,
-    AmmRpcData,
-    AmmV4Keys,
-    AmmV5Keys,
-    ComputeClmmPoolInfo,
     PoolFetchType,
     ApiV3PoolInfoItem,
 } from "@raydium-io/raydium-sdk-v2";
@@ -109,6 +105,37 @@ export class RaydiumDex extends BaseDex {
         return parseRaydiumPool(data);
     }
 
+    public async subscribeToPrice(
+        poolAddress: string,
+        callback: (priceData: PoolPrice) => void,
+        poolType?: string
+    ): Promise<number> {
+        const addr = new PublicKey(poolAddress);
+
+        // Use Solana's onAccountChange to detect when the pool's state is updated on chain.
+        // This is triggered by trades/liquidity changes, making it true real-time.
+        return this.connection.onAccountChange(addr, async (accountInfo, context) => {
+            try {
+                // When account changes, we re-fetch the calculated price.
+                const priceData = await this.getPoolPrice(poolAddress, poolType);
+                callback(priceData);
+            } catch (err) {
+                console.error(`[Raydium] Subscription update failed for ${poolAddress}:`, err);
+            }
+        }, {
+            commitment: this.connection.commitment,
+            encoding: 'jsonParsed'
+        });
+    }
+
+    public async unsubscribe(subscriptionId: number): Promise<void> {
+        try {
+            await this.connection.removeAccountChangeListener(subscriptionId);
+        } catch (err) {
+            console.error(`[Raydium] Failed to unsubscribe ${subscriptionId}:`, err);
+        }
+    }
+
     private async initSdk(): Promise<Raydium> {
         if (!this.sdk) {
             this.sdk = await Raydium.load({
@@ -121,31 +148,33 @@ export class RaydiumDex extends BaseDex {
     }
 
     private async getClmmPrice(raydium: Raydium, poolId: string): Promise<PoolPrice> {
-        const { poolInfo, computePoolInfo } = await raydium.clmm.getPoolInfoFromRpc(poolId);
-        const computeInfo = computePoolInfo as ComputeClmmPoolInfo;
-        const price = computeInfo.currentPrice.toNumber();
-        return this.buildPoolPrice(poolId, price, poolInfo.mintA.address, poolInfo.mintB.address);
+        const poolInfo = (await raydium.clmm.getRpcClmmPoolInfos({ poolIds: [poolId] }))[poolId];
+        if (!poolInfo) return this.buildPoolPrice(poolId, 0, "", "");
+        const price = poolInfo.currentPrice;
+        return this.buildPoolPrice(poolId, price, poolInfo.mintA.toString(), poolInfo.mintB.toString());
     }
 
     private async getCpmmPrice(raydium: Raydium, poolId: string): Promise<PoolPrice> {
-        const { poolInfo, rpcData } = await raydium.cpmm.getPoolInfoFromRpc(poolId);
-        const reserveA = rpcData.baseReserve.toNumber();
-        const reserveB = rpcData.quoteReserve.toNumber();
-        if (reserveA === 0) throw new Error("Zero reserve A");
-        const decimalAdjust = Math.pow(10, poolInfo.mintA.decimals - poolInfo.mintB.decimals);
-        const price = (reserveB / reserveA) * decimalAdjust;
-        return this.buildPoolPrice(poolId, price, poolInfo.mintA.address, poolInfo.mintB.address);
+        // Single RPC fetch of the pool account; `false` skips the extra config request.
+        const poolInfo = await raydium.cpmm.getRpcPoolInfo(poolId, false);
+        if (poolInfo.baseReserve.isZero()) throw new Error("Zero reserve A");
+        return this.buildPoolPrice(
+            poolId,
+            poolInfo.poolPrice.toNumber(),
+            poolInfo.mintA.toBase58(),
+            poolInfo.mintB.toBase58()
+        );
     }
 
     private async getAmmV4Price(raydium: Raydium, poolId: string): Promise<PoolPrice> {
-        const { poolRpcData, poolKeys } = await raydium.liquidity.getPoolInfoFromRpc({ poolId });
-        const data = poolRpcData as AmmRpcData;
-        const keys = poolKeys as AmmV4Keys | AmmV5Keys;
-        const reserveA = data.baseReserve.toNumber();
-        const reserveB = data.quoteReserve.toNumber();
-        if (reserveA === 0) throw new Error("Zero reserve A");
-        const decimalAdjust = Math.pow(10, keys.mintA.decimals - keys.mintB.decimals);
-        const price = (reserveB / reserveA) * decimalAdjust;
-        return this.buildPoolPrice(poolId, price, keys.mintA.address, keys.mintB.address);
+        // Single RPC fetch of the pool account (getPoolInfoFromRpc fans out to market/vault accounts).
+        const data = await raydium.liquidity.getRpcPoolInfo(poolId);
+        if (data.baseReserve.isZero()) throw new Error("Zero reserve A");
+        return this.buildPoolPrice(
+            poolId,
+            data.poolPrice.toNumber(),
+            data.baseMint.toBase58(),
+            data.quoteMint.toBase58()
+        );
     }
 }

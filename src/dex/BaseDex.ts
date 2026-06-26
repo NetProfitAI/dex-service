@@ -51,6 +51,27 @@ export abstract class BaseDex {
     public abstract getPoolList(): Promise<Pool[]>;
 
     /**
+     * Subscribe to real-time price updates for a given pool.
+     *
+     * @param poolAddress - On-chain address of the AMM pool
+     * @param callback - Function called whenever the price changes
+     * @param poolType - Optional pool type (DEX specific)
+     * @returns A subscription ID to be used for unsubscribing
+     */
+    public abstract subscribeToPrice(
+        poolAddress: string,
+        callback: (priceData: PoolPrice) => void,
+        poolType?: string
+    ): Promise<number>;
+
+    /**3
+     * Unsubscribe from price updates.
+     *
+     * @param subscriptionId - The ID returned by subscribeToPrice
+     */
+    public abstract unsubscribe(subscriptionId: number): Promise<void>;
+
+    /**
      * Helper – returns a base {@link PoolPrice} skeleton populated with the
      * common fields so subclasses only have to fill in the price-specific data.
      */

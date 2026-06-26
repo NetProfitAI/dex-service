@@ -1,6 +1,7 @@
 import { createSolanaRpc } from "@solana/rpc";
 import { address } from "@solana/addresses";
 import type { Rpc, GetAccountInfoApi, GetMultipleAccountsApi } from "@solana/kit";
+import { PublicKey } from "@solana/web3.js";
 import { fetchWhirlpool } from "@orca-so/whirlpools-client";
 import { sqrtPriceToPrice } from "@orca-so/whirlpools-core";
 import axios from "axios";
@@ -53,6 +54,33 @@ export class WhirlpoolDex extends BaseDex {
         } catch (e) {
             console.error(`❌ Whirlpool getPoolList error: ${e}`);
             return [];
+        }
+    }
+
+    public async subscribeToPrice(
+        poolAddress: string,
+        callback: (priceData: PoolPrice) => void,
+        poolType?: string
+    ): Promise<number> {
+        const addr = new PublicKey(poolAddress);
+        return this.connection.onAccountChange(addr, async (accountInfo) => {
+            try {
+                const priceData = await this.getPoolPrice(poolAddress, poolType);
+                callback(priceData);
+            } catch (err) {
+                console.error(`[Whirlpool] Subscription update failed for ${poolAddress}:`, err);
+            }
+        }, {
+            commitment: this.connection.commitment,
+            encoding: 'jsonParsed'
+        });
+    }
+
+    public async unsubscribe(subscriptionId: number): Promise<void> {
+        try {
+            await this.connection.removeAccountChangeListener(subscriptionId);
+        } catch (err) {
+            console.error(`[Whirlpool] Failed to unsubscribe ${subscriptionId}:`, err);
         }
     }
 }

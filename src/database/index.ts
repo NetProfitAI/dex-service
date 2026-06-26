@@ -201,4 +201,58 @@ export async function getTopLiquidityPairs(limit: number = 10): Promise<any[]> {
     return res.rows;
 }
 
+/**
+ * A detected cross-DEX arbitrage opportunity, ready to be persisted.
+ * `detected_at` / `detected_date` / `detected_hour` are filled in by the DB defaults.
+ */
+export interface ArbitrageOpportunityRecord {
+    tokenAMint: string;
+    tokenBMint: string;
+    tokenASymbol?: string;
+    tokenBSymbol?: string;
+    route: string;        // e.g. "Raydium -> Whirlpool"
+    buyDex: string;
+    buyPool: string;
+    buyPrice: number;
+    sellDex: string;
+    sellPool: string;
+    sellPrice: number;
+    grossPct?: number;
+    feePct?: number;
+    impactPct?: number;
+    netPct?: number;
+    tradeUsd?: number;
+}
+
+export async function saveArbitrageOpportunity(op: ArbitrageOpportunityRecord): Promise<void> {
+    await pgPool.query(
+        `INSERT INTO arbitrage_opportunities (
+            token_a_mint, token_b_mint, token_a_symbol, token_b_symbol,
+            route, buy_dex, buy_pool, buy_price,
+            sell_dex, sell_pool, sell_price,
+            gross_pct, fee_pct, impact_pct, net_pct, trade_usd
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+        )`,
+        [
+            op.tokenAMint,
+            op.tokenBMint,
+            op.tokenASymbol ?? null,
+            op.tokenBSymbol ?? null,
+            op.route,
+            op.buyDex,
+            op.buyPool,
+            op.buyPrice,
+            op.sellDex,
+            op.sellPool,
+            op.sellPrice,
+            op.grossPct ?? null,
+            op.feePct ?? null,
+            op.impactPct ?? null,
+            op.netPct ?? null,
+            op.tradeUsd ?? null,
+        ]
+    );
+}
+
 export default pgPool;
